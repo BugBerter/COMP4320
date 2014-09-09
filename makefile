@@ -1,14 +1,16 @@
-CC=g++
-CFLAGS=-c -Wall
-LDFLAGS=
-SOURCES=serverUDP.cpp clientUDP.cpp
-OBJECTS=$(SOURCES:.cpp=.o)
-EXECUTABLE=ServerUDP
+SOURCES=$(wildcard *.c)
+OBJECTS=$(SOURCES:.c=.o)
+DEPS=$(SOURCES:.c=.d)
+BINS=$(SOURCES:.c=)
 
-all: $(SOURCES) $(EXECUTABLE)
-	
-$(EXECUTABLE): $(OBJECTS) 
-	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
+CFLAGS+=-MMD
+CXXFLAGS+=-MMD
 
-.cpp.o:
-	$(CC) $(CFLAGS) $< -o $@
+all: $(BINS)
+
+.PHONY: clean
+
+clean:
+	$(RM) $(OBJECTS) $(DEPS) $(BINS)
+
+-include $(DEPS)

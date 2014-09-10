@@ -15,10 +15,9 @@
 #define LOW_BITS(x) (char)(x & 0xFF)
 #define HIGH_BITS(x) (char)(x >> 8)
 
-#define HEADER_RESPONSE_LENGTH 4 // in bytes
+#define HEADER_RESPONSE_LENGTH 0x4 // in bytes
 // vlength operation constants
 #define VLENGTH_OPERATION 0x55
-#define VLENGTH_RESPONSE_BODY_LENGTH 2 // in bytes
 
 // disvowel operation constants
 #define DISVOWEL_OPERATION 0xAA
@@ -31,6 +30,15 @@ struct client_request
     uint16_t message_length;
     char *message;
 };
+
+// biaz recommend for sending:
+//      store data into struct in network byte order (htons(..), etc.)
+// then take the server_response and cast to (char *)
+struct server_response {
+    uint16_t length;
+    uint16_t rid;
+    char msg[968]; // per biaz, total message not more than 1Kb
+} __attribute__((__packed__));
 
 // handles calling socket and bind, returns the sock file descriptor
 // ready to be read()
@@ -48,7 +56,8 @@ int main(int argc, char const *argv[])
     int sockfd = udp_connect();
     struct client_request *request;
     uint16_t message_length;
-    char *response;
+
+    struct server_response *response;
 
     for (;;)
     {
@@ -58,43 +67,29 @@ int main(int argc, char const *argv[])
 
         if (request->operation == VLENGTH_OPERATION)
         {
-            response = malloc(HEADER_RESPONSE_LENGTH + VLENGTH_RESPONSE_BODY_LENGTH);
-            message_length = htons(0x0006);
-            uint16_t respone_length = htons(num_vowels(request->message));
-            // all three variables are already network endianness, so we put the high bits first then the low bits
-            response[0] = HIGH_BITS(message_length);
-            response[1] = LOW_BITS(message_length);
-            response[2] = HIGH_BITS(request->request_id);
-            response[3] = LOW_BITS(request->request_id);
-            response[4] = HIGH_BITS(respone_length);
-            response[5] = LOW_BITS(respone_length);
+            uint16_t vowels = htons(num_vowels(request->message));
 
-            write(sockfd, response, HEADER_RESPONSE_LENGTH + VLENGTH_RESPONSE_BODY_LENGTH);
+            response = malloc(sizeof(struct server_response));
+            response->length = htons(0x0006);
+            response->rid = request->request_id; // already network endian
+            memcopy(&response->msg, &vowels, 2);
+
+            write(sockfd, (char *)response, 6);
         }
         else if (request->operation == DISVOWEL_OPERATION)
         {
             // + 1 for the null byte
             char *disvoweled = disvowel(request->message, message_length + 1);
 
-            // - 1 because we don't send the null byte
-            message_length = HEADER_RESPONSE_LENGTH + strlen(disvoweled) - 1;
-            response = malloc(message_length);
+            int c = 0,
+                disvoweled_length = strlen(disvoweled),     // -1 for the null byte
+                message_length = HEADER_RESPONSE_LENGTH + disvoweled_length - 1;
 
-            int c = 0, n_message_length = htons(message_length);
+            response->length = htons(message_length);
+            response->rid = request->request_id;
+            memcopy(&response->msg, disvoweled, disvoweled_length);
 
-            response[c++] = HIGH_BITS(n_message_length);
-            response[c++] = LOW_BITS(n_message_length);
-            response[c++] = HIGH_BITS(request->request_id);
-            response[c++] = LOW_BITS(request->request_id);
-
-            int i = 0;
-            // note we don't write the string terminator ('\0') to the network
-            for (i = 0; disvoweled[i] != '\0'; ++i)
-            {
-                response[c++] = disvoweled[i];
-            }
-
-            write(sockfd, response, message_length);
+            write(sockfd, (char *)response, n_message_length);
         }
         else
         {

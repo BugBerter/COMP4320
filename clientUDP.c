@@ -17,6 +17,12 @@
 // disvowel operation constants
 #define DISVOWEL_OPERATION 0xAA
 
+struct udpsetup
+{
+    int sockfd;
+    struct addrinfo *server;
+};
+
 struct client_request
 {
     uint16_t request_length;
@@ -34,32 +40,34 @@ struct server_response {
 
 // handles calling socket and bind, returns the sock file descriptor
 // ready to be read()
-int udp_connect();
+struct udpsetup* udp_connect();
 
 // implements the protocol for this lab
 struct client_request* read_request(int sockfd);
 
 int main(int argc, char const *argv[])
 {
-    int sockfd = udp_connect();
+    struct udpsetup *con = udp_connect();
 
-    close(sockfd);
+    sendto(con->sockfd, MSG, MSG_LEN, 0, (struct sockaddr*)&con->server, sizeof con->server);
 
+    close(con->sockfd);
     return 0;
 }
 
-
-int udp_connect()
+struct udpsetup* udp_connect(char *hostname)
 {
     int status, sockfd;
-    struct addrinfo hints, *res;
+    struct addrinfo hints, *res, *p;
+
+    struct udpsetup *result = malloc(sizeof(struct udpsetup));
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;
 
-    if ((status = getaddrinfo(NULL, PORT, &hints, &res)) != 0) {
+    if ((status = getaddrinfo(hostname, PORT, &hints, &res)) != 0) {
         printf("Failed to get address info\n");
         exit(1);
     }
@@ -69,18 +77,24 @@ int udp_connect()
             res->ai_flags, res->ai_family, res->ai_socktype, res->ai_protocol, res->ai_addrlen, res->ai_canonname);
     }
 
-    sockfd = socket(PF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
-        perror("socket");
-        close(sockfd);
-        exit(1);
-    }
-    else
-    {
-        printf("Set up the socket file descriptor correctly\n");
+    for(p = res; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+            perror("talker: socket");
+            continue;
+        }
+
+        break;
     }
 
-    return sockfd;
+    if (p == NULL) {
+        fprintf(stderr, "talker: failed to bind socket\n");
+        exit(2);
+    }
+
+    result->sockfd = sockfd;
+    result->server = p;
+
+    return result;
 }
 
 struct client_request* read_request(int sockfd)

@@ -72,7 +72,7 @@ int main(int argc, char const *argv[])
             response = malloc(sizeof(struct server_response));
             response->length = htons(0x0006);
             response->rid = request->request_id; // already network endian
-            memcopy(&response->msg, &vowels, 2);
+            memcpy(&response->msg, &vowels, 2);
 
             write(sockfd, (char *)response, 6);
         }
@@ -87,9 +87,9 @@ int main(int argc, char const *argv[])
 
             response->length = htons(message_length);
             response->rid = request->request_id;
-            memcopy(&response->msg, disvoweled, disvoweled_length);
+            memcpy(&response->msg, disvoweled, disvoweled_length);
 
-            write(sockfd, (char *)response, n_message_length);
+            write(sockfd, (char *)response, message_length);
         }
         else
         {

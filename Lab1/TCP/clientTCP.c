@@ -17,8 +17,7 @@
 // disvowel operation constants
 #define DISVOWEL_OPERATION 0xAA
 
-struct tcpsetup
-{
+struct tcpsetup {
     int sockfd;
     struct addrinfo *server;
 };

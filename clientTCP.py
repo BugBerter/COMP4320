@@ -22,7 +22,7 @@ def tcp_client(server, port, operation, msg):
         # get message length
         msg_length = conn.recv(2)
         # get rest of message
-        data = conn.recv(int(binascii.hexlify(msg_length)) - 2)
+        data = conn.recv(int(binascii.hexlify(msg_length), 16) - 2)
 
         end_time = time.time()
         uptime = end_time - start_time
@@ -36,7 +36,7 @@ def tcp_client(server, port, operation, msg):
             print "Trip time: %s ms" % str(uptime * 1000)
 
         if int(operation) == 0xAA:
-            resp = struct.unpack('!H %ds' % (int(binascii.hexlify(msg_length)) - 4,), data)
+            resp = struct.unpack('!H %ds' % (int(binascii.hexlify(msg_length), 16) - 4,), data)
             print "Request ID: %d" % resp[0]
             print "Returned string: %s" % str(resp[1])
             print "Trip time: %s ms" % str(uptime * 1000)

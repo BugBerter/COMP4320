@@ -19,13 +19,13 @@ def tcp_listen(port):
             msg_length = conn.recv(2)
 
             # get rest of message
-            data = conn.recv(int(binascii.hexlify(msg_length)) - 2)
+            data = conn.recv(int(binascii.hexlify(msg_length), 16) - 2)
 
             # unpack
-            req = struct.unpack('!H B %ds' % (int(binascii.hexlify(msg_length)) - 5,), data)
+            req = struct.unpack('!H B %ds' % (int(binascii.hexlify(msg_length), 16) - 5,), data)
 
             # check length
-            if int(binascii.hexlify(msg_length)) != len(req[2]) + 5:
+            if int(binascii.hexlify(msg_length), 16) != len(req[2]) + 5:
                 print "wrong"
 
             # number of vowels
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print "Error: incorrect number of arguments"
         print "Usage: ./serverTCP.py <port>"
-        
+
     else:
         tcp_listen(int(sys.argv[1]))
 

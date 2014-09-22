@@ -24,12 +24,13 @@
 
 struct client_request
 {
-    uint16_t request_length;
-    uint16_t request_id;
+    uint16_t length;
+    uint16_t rid;
     uint8_t  operation;
-    uint16_t message_length;
-    char *message;
-};
+    char message[1019];
+    struct sockaddr* addr;
+    socklen_t sock_len;
+} __attribute__((__packed__));
 
 // biaz recommend for sending:
 //      store data into struct in network byte order (htons(..), etc.)
@@ -37,7 +38,7 @@ struct client_request
 struct server_response {
     uint16_t length;
     uint16_t rid;
-    char msg[968]; // per biaz, total message not more than 1Kb
+    char msg[1020]; // per biaz, total message not more than 1Kb = 1024
 } __attribute__((__packed__));
 
 // handles calling socket and bind, returns the sock file descriptor
@@ -67,29 +68,46 @@ int main(int argc, char const *argv[])
 
         if (request->operation == VLENGTH_OPERATION)
         {
+            printf("Sending numvowels\n");
+
             uint16_t vowels = htons(num_vowels(request->message));
 
             response = malloc(sizeof(struct server_response));
             response->length = htons(0x0006);
-            response->rid = request->request_id; // already network endian
+            response->rid = request->rid; // already network endian
+
+            printf("#vowels: %d\n", ntohs(vowels));
+
             memcpy(&response->msg, &vowels, 2);
 
-            write(sockfd, (char *)response, 6);
+            printf("Write:\n\tLength: %d\n\tRID: %d\n\tMessage:%d\n",
+                response->length, response->rid, ntohs((uint16_t)response->msg));
+
+            sendto(sockfd, response, 6, 0, request->addr, request->sock_len);
+
+            printf("Sent numvowels\n");
         }
         else if (request->operation == DISVOWEL_OPERATION)
         {
+            printf("Sending disvowlered string\n");
             // + 1 for the null byte
-            char *disvoweled = disvowel(request->message, message_length + 1);
+            char *disvoweled = disvowel(request->message, request->length - 5);
 
             int c = 0,
                 disvoweled_length = strlen(disvoweled),     // -1 for the null byte
-                message_length = HEADER_RESPONSE_LENGTH + disvoweled_length - 1;
+                message_length = HEADER_RESPONSE_LENGTH + disvoweled_length;
 
+            response = malloc(sizeof(struct server_response));
             response->length = htons(message_length);
-            response->rid = request->request_id;
-            memcpy(&response->msg, disvoweled, disvoweled_length);
+            response->rid = request->rid;
+            memcpy(response->msg, disvoweled, disvoweled_length);
 
-            write(sockfd, (char *)response, message_length);
+            printf("Write:\n\tLength: %d\n\tRID: %d\n\tMessage:%s\n",
+                response->length, response->rid, response->msg);
+
+            sendto(sockfd, response, message_length, 0, request->addr, request->sock_len);
+
+            printf("Sent numvowels\n");
         }
         else
         {
@@ -155,39 +173,28 @@ struct client_request* read_request(int sockfd)
 {
     uint16_t length, request_id, message_length;
     uint8_t operation;
+    socklen_t addr_len;
+
+    struct sockaddr *their_addr = malloc(sizeof(struct sockaddr));
     struct client_request *request = malloc(sizeof(struct client_request));
+    memset(request, 0, sizeof(struct client_request));
 
-    // get header information:
-    read(sockfd, &length, 2);
-    read(sockfd, &request_id, 2);
-    read(sockfd, &operation, 1);
+    // change to recvfrom and return the struct
+    addr_len = sizeof their_addr;
+    recvfrom(sockfd, request, 1024, 0, (struct sockaddr *)their_addr, &addr_len);
 
-    // no need to ntoh_(operaton) because it's only a single byte
-    // no need to ntohs(request_id) because we only send it back to the client
-    length = ntohs(length);
+    request->length = ntohs(request->length);
+    request->addr = their_addr;
+    request->sock_len = addr_len;
 
-    // read the message contents:
-    // there are always 5 bytes in protocol header
-    message_length = length - 5;
-    char *message;
-    message = malloc(message_length + 1); // 1 extra so we can insert the null byte
-
-    read(sockfd, message, message_length);
-    message[message_length] = '\0'; // so we can treat the message as a normal string
-
-    // populate our struct
-    request->request_length = length;
-    request->request_id = request_id;
-    request->operation = operation;
-    request->message_length = message_length;
-    request->message = message;
+    printf("Read:\n\tLength: %d\n\tRID: %d\n\tMessage:%s\n", request->length, request->rid, request->message);
 
     return request;
 }
 
 uint16_t num_vowels(char *msg)
 {
-    uint16_t i, count;
+    uint16_t i = 0, count = 0;
     // we can always access msg[0] because we malloc message_length + 1 and insert
     // a null byte; in the worst case, i = 0 and msg[i] = '\0' and we skip right out.
     for (i = 0; msg[i] != '\0'; ++i)
@@ -219,8 +226,10 @@ char *disvowel(char *msg, uint16_t msg_length)
     uint16_t c, i;
     c = 0;
 
+    printf("msg_length = %d\n", msg_length);
+
     // since char = 1 byte we don't need to multiply by sizeof(char)
-    ret = malloc(msg_length - num_vowels(msg));
+    ret = malloc(msg_length - num_vowels(msg) + 1);
     for (i = 0; msg[i] != '\0'; ++i)
     {
         switch(msg[i])
@@ -238,10 +247,13 @@ char *disvowel(char *msg, uint16_t msg_length)
                  break;
             default:
                 ret[c++] = msg[i];
+                printf("Added char %c\n", msg[i]);
                 break;
         }
+        // after break
     }
 
     ret[c] = '\0';
+
     return ret;
 }

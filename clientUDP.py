@@ -10,7 +10,7 @@ import datetime
 def tcp_client(server, port, operation, msg):
     conn = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_address = (server, int(port))
-    conn.connect(server_address)
+    #conn.connect(server_address)
 
     # format request
     req = struct.pack('!H H B %ds' %(len(msg),), len(msg)+5, 1, int(operation), msg)
@@ -18,27 +18,27 @@ def tcp_client(server, port, operation, msg):
     try:
         print "sending..."
         start_time = time.time()
-        conn.sendall(req)
+        conn.sendto(req, server_address)
         # get message length
-        msg_length = conn.recv(2)
-        # get rest of message
-        data = conn.recv(int(binascii.hexlify(msg_length), 16) - 2)
-
+        data = conn.recv(1024)
+        
         end_time = time.time()
         uptime = end_time - start_time
 
         # format print results
 
         if int(operation) == 0x55:
-            resp = struct.unpack('!H H', data)
-            print "Request ID: %d" % resp[0]
-            print "Answer: %d" % resp[1]
+            resp = struct.unpack('! H H H', data[:6])
+            print "Request ID: %d" % resp[1]
+            print "Answer: %d" % resp[2]
             print "Trip time: %s ms" % str(uptime * 1000)
 
         if int(operation) == 0xAA:
-            resp = struct.unpack('!H %ds' % (int(binascii.hexlify(msg_length), 16) - 4,), data)
-            print "Request ID: %d" % resp[0]
-            print "Returned string: %s" % str(resp[1])
+
+            resp = struct.unpack('! H H %ds' % (int(binascii.hexlify(data[:2]), 16) - 4,), data)
+
+            print "Request ID: %d" % resp[1]
+            print "Returned string: %s" % str(resp[2])
             print "Trip time: %s ms" % str(uptime * 1000)
 
     finally:

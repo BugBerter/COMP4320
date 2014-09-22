@@ -17,12 +17,16 @@ def tcp_listen(port):
         try:
             # get message length
             msg_length = conn.recv(2)
+            print "message length: %d" % int(binascii.hexlify(msg_length),16)
 
             # get rest of message
             data = conn.recv(int(binascii.hexlify(msg_length), 16) - 2)
+            print data
 
             # unpack
             req = struct.unpack('!H B %ds' % (int(binascii.hexlify(msg_length), 16) - 5,), data)
+
+            print "Req[1] = %d" % req[1]
 
             # check length
             if int(binascii.hexlify(msg_length), 16) != len(req[2]) + 5:
@@ -31,10 +35,12 @@ def tcp_listen(port):
             # number of vowels
             elif req[1] == 0x55:
                 x = num_vowels(req[2])
+                print "#vowels: %d" % x 
                 conn.send(struct.pack('!H H H', 6, req[0], x))
             # disemvowel
             elif req[1] == 0xAA:
                 x = disemvowel(req[2])
+                print "disemvowel: %s" % x
                 y = len(x)
                 conn.send(struct.pack('!HH%ds' % (y,), y+4, req[0], x))
             else:
@@ -65,4 +71,3 @@ if __name__ == "__main__":
 
     else:
         tcp_listen(int(sys.argv[1]))
-

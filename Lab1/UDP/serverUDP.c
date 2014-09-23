@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <unistd.h>
 
-#define PORT "10010"
 #define BACKLOG 10
 
 // expects a 16 bit integer
@@ -52,9 +51,14 @@ char *disvowel(char *msg, uint16_t msg_length);
 // implements the protocol for this lab
 struct client_request* read_request(int sockfd);
 
-int main(int argc, char const *argv[])
+int main(int argc, char *argv[])
 {
-    int sockfd = udp_connect();
+    if (argc < 1) {
+        printf("Correct usage is serverUDP <port #>\n");
+        exit(1);
+    }
+
+    int sockfd = udp_connect(argv[1]);
     struct client_request *request;
     uint16_t message_length;
 
@@ -124,7 +128,7 @@ int main(int argc, char const *argv[])
 }
 
 
-int udp_connect()
+int udp_connect(char *port)
 {
     int status, sockfd;
     struct addrinfo hints, *res;
@@ -134,7 +138,7 @@ int udp_connect()
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_flags = AI_PASSIVE;
 
-    if ((status = getaddrinfo(NULL, PORT, &hints, &res)) != 0) {
+    if ((status = getaddrinfo(NULL, port, &hints, &res)) != 0) {
         printf("Failed to get address info\n");
         exit(1);
     }

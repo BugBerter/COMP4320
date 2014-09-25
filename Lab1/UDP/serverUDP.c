@@ -53,7 +53,7 @@ struct client_request* read_request(int sockfd);
 
 int main(int argc, char *argv[])
 {
-    if (argc < 1) {
+    if (argc < 2) {
         printf("Correct usage is serverUDP <port #>\n");
         exit(1);
     }

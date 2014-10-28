@@ -50,7 +50,7 @@ def udp_client(args):
                 resp = struct.unpack('!%dB' % msg_length, data)
             except struct.error:
                 print "invalid message length..."
-                #print ''.join(x.encode('hex') for x in data)
+                print ''.join(x.encode('hex') for x in data)
                 continue
 
             resp_checksum = checksum(resp)
@@ -95,10 +95,8 @@ def checksum(msg):
     for i, b in enumerate(msg):
         # skip checksum field
         if i != 2:
-            temp = temp + b
-        # extract carry
-        if temp > 255:
-            temp = temp - 255
+            temp += b
+            temp += (temp & 0xFF) >> 8
     return (~temp) & 0xFF
 
 if __name__ == "__main__":

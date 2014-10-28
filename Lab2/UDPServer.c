@@ -233,7 +233,7 @@ int main(int argc, char *argv[])
             sendto(sockfd, response, 5, 0, request->addr, request->sock_len);
 
         } else if (request->computed_length != request->length){
-            response = malloc(sizeof(struct server_response));
+            char *buf = malloc(5 * sizeof(uint8_t));
             // ignore the actual fields here, we're matching the byte pattern:
             //   checksum, 127, 127, 0x00, 0x00
             buf[1] = 127;

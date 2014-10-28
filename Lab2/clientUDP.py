@@ -25,7 +25,7 @@ def udp_client(args):
     msg = form_message(msg_length, GID, requestID, hostnames)
 
     # compute checksum
-    req_checksum = checksum(msg)
+    req_checksum = checksum(msg, 2)
     msg[2] = req_checksum
 
     # format request
@@ -41,26 +41,40 @@ def udp_client(args):
             # get message length
             data = conn.recv(1024)
 
+            # check if it was an error case
+            err_msg = struct.unpack('!5B', data[:5])
+            err_checksum = checksum(err_msg, 0)
+            if err_msg == (err_checksum, 24, requestID, 0, 0):
+                print "Received bad checksum error from server..."
+                continue
+            if err_msg == (err_checksum, 127, 127, 0, 0):
+                print "Received length mismatch error from server..."
+                continue
+
+            # happy case
             # grab msg_length
             msg_length_tuple = struct.unpack('!2B', data[:2])
-            msg_length = (msg_length_tuple[1] << 8) + msg_length_tuple[0]
+            msg_length = (msg_length_tuple[0] << 8) + msg_length_tuple[1]
+            print "received msg_length: %d" % msg_length
 
             # get rest of message
             try:
-                resp = struct.unpack('!%dB' % msg_length, data)
+                resp = struct.unpack('!%dB' % msg_length, data[:msg_length])
             except struct.error:
                 print "invalid message length..."
-                print ''.join(x.encode('hex') for x in data)
+                print ' '.join(x.encode('hex') for x in data)
                 continue
 
-            resp_checksum = checksum(resp)
+            resp_checksum = checksum(resp, 2)
+            print "resp_checksum = %d\nrec checksum = %d" % (resp_checksum, resp[2])
             if resp_checksum != resp[2]:
                 print "Bad checksum..."
+                print ' '.join(x.encode('hex') for x in data)
                 continue
             else:
                 ip_addresses = resp[5:]
                 for i, host in enumerate(hostnames):
-                    print host + ": %d.%d.%d.%d" % (ip_addresses[i*4],ip_addresses[i*4+1],ip_addresses[i*4+2],ip_addresses[i*4+3])
+                    print host + ": %d.%d.%d.%d" % (ip_addresses[i*4 + 3],ip_addresses[i*4+2],ip_addresses[i*4+1],ip_addresses[i*4])
                 break
 
     finally:
@@ -90,14 +104,16 @@ def form_message(msg_length, gid, rid, hostnames):
 
     return msg
 
-def checksum(msg):
-    temp = 0
+def checksum(msg, checksum_idx):
+    CARRY_MASK = 0xff00
+    sum = 0
     for i, b in enumerate(msg):
         # skip checksum field
-        if i != 2:
-            temp += b
-            temp += (temp & 0xFF) >> 8
-    return (~temp) & 0xFF
+        if i != checksum_idx:
+            sum += b
+            sum += (sum & CARRY_MASK) >> 8
+        # extract carry
+    return ((~sum) & 0xff)
 
 if __name__ == "__main__":
     if len(sys.argv) < 5:

@@ -98,18 +98,19 @@ int udp_connect(char *port)
     return sockfd;
 }
 
-uint8_t checksum(char *str, size_t len) {
+uint8_t checksum(char *str, size_t len, size_t checksumindex) {
     // used to take any overflow from the first byte into the second
     const uint16_t CARRY_MASK = 0xFF00;
-
     size_t i;
     uint16_t sum = 0x0000;
     for (i = 0; i < len; ++i) {
-        sum += str[i];
-        sum += (sum & CARRY_MASK) >> 8;
+        if (i != checksumindex) {
+            sum += str[i];
+            sum += (sum & CARRY_MASK) >> 8;   
+        }
     }
     // take the complement per the algorithm
-    return (uint8_t)~sum;
+    return (uint8_t)((~sum) & 0x00FF);
 }
 
 struct hostnames *spliton(char *str, size_t len, char delim) {
@@ -145,17 +146,11 @@ struct hostnames *spliton(char *str, size_t len, char delim) {
     hostnames->hostnames = result;
 
     PRINTD("Num hostnames: %d\n", hostnames->numhosts);
-    #ifdef DEBUG
-        if (hostnames->numhosts > 0){
-            PRINTD("%s\n", hostnames->hostnames[0]);   
-        }
-    #endif
 
     return hostnames;
 }
 
-struct client_request *read_request(int sockfd)
-{
+struct client_request *read_request(int sockfd) {
     PRINTD("Waiting to read client request\n");
 
     struct packet *p = calloc(1, sizeof(struct packet));
@@ -167,22 +162,20 @@ struct client_request *read_request(int sockfd)
     ssize_t bytes_recieved = recvfrom(sockfd, p, sizeof(struct packet), 0, (struct sockaddr *)their_addr, &addr_len);
 
     PRINTD("Recieved from client:\n");
-    PRINTD("\t%c%s\n", p->delim, p->urls);
+    PRINTD("\t%04x%02x%02x%02x%c%s\n", ntohs(p->length), p->checksum, p->groupid, p->rid, p->delim, p->urls);
 
     request->checksum = p->checksum;
+    request->computed_checksum = checksum((char *)p, bytes_recieved, 2);
+    PRINTD("Checksum from client: %d\nComputed checksum: %d\n", request->checksum, request->computed_checksum);
+
+    request->length = ntohs(p->length);
     request->groupid = p->groupid;
     request->rid = p->rid;
     request->delim = p->delim;
-    request->length = ntohs(p->length);
     request->computed_length = bytes_recieved;
     request->hostnames = spliton(p->urls, URL_ARRAY_LENGTH, request->delim);
     request->addr = their_addr;
     request->sock_len = addr_len;
-
-    p->checksum = 0;
-    request->computed_checksum = checksum((char *)p, sizeof(struct packet));
-
-    PRINTD("Checksum from client: %d\nComputed checksum: %d\n", request->checksum, request->computed_checksum);
 
     return request;
 }
@@ -223,11 +216,12 @@ int main(int argc, char *argv[])
             char *buf = malloc(5 * sizeof(uint8_t));
             // ignore the actual fields here, we're matching the byte pattern:
             //   checksum, GID, RequestID, 0x00, 0x00
+            buf[0] = 0x00;
             buf[1] = request->groupid;
             buf[2] = request->rid;
             buf[3] = 0x00;
             buf[4] = 0x00;
-            buf[0] = checksum(buf, 5);
+            buf[0] = checksum(buf, 5, 0);
             PRINTD("Checksums neq, sending: %x %x %x %x %x\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
 
             sendto(sockfd, response, 5, 0, request->addr, request->sock_len);
@@ -236,13 +230,14 @@ int main(int argc, char *argv[])
             char *buf = malloc(5 * sizeof(uint8_t));
             // ignore the actual fields here, we're matching the byte pattern:
             //   checksum, 127, 127, 0x00, 0x00
+            buf[0] = 0x00;
             buf[1] = 127;
             buf[2] = 127;
             buf[3] = 0x00;
             buf[4] = 0x00;
-            buf[0] = checksum(buf, 5);
+            buf[0] = checksum(buf, 5, 0);
             PRINTD("Checksums neq, sending: %x %x %x %x %x\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
-            
+
             sendto(sockfd, response, 5, 0, request->addr, request->sock_len);
         } else {
 
@@ -259,28 +254,30 @@ int main(int argc, char *argv[])
 
             PRINTD("Numhosts = %d\n", request->hostnames->numhosts);
             for (i = 0; i < request->hostnames->numhosts; ++i) {
+
                 getaddrinfo(request->hostnames->hostnames[i], "http", hints, &res);
                 ip = get_ip_addr(res);
                 PRINTD("Got IP address of %d from hostname %s\n", ip, request->hostnames->hostnames[i]);
 
-                response->msg[j] = (uint8_t)((ip >> 24) & 0xFF);
-                response->msg[j + 1] = (uint8_t)((ip >> 16) & 0xFF);
-                response->msg[j + 2] = (uint8_t)((ip >> 8) & 0xFF);
-                response->msg[j + 3] = (uint8_t)(ip & 0xFF);
+                response->msg[j + 3] = (uint8_t)((ip >> 24) & 0xFF);
+                response->msg[j + 2] = (uint8_t)((ip >> 16) & 0xFF);
+                response->msg[j + 1] = (uint8_t)((ip >> 8) & 0xFF);
+                response->msg[j + 0] = (uint8_t)(ip & 0xFF);
 
                 PRINTD("%02x %02x %02x %02x\n", (uint8_t)((ip >> 24) & 0xFF), (uint8_t)((ip >> 16) & 0xFF), (uint8_t)((ip >> 8) & 0xFF), (uint8_t)(ip & 0xFF));
                 j += 4;
             }
 
             response->length = htons(5 + j);
+            response->checksum = 0x00;
             response->groupid = request->groupid;
             response->rid = request->rid;
-            response->checksum = checksum((char *)response, sizeof(struct server_response));
+            response->checksum = checksum((char *)response, sizeof(struct server_response), 2);
 
-            PRINTD("Sending: %x %x %x %x ", response->length, response->checksum, response->groupid, response->rid);
+            PRINTD("Sending: %04x %02x %02x %02x ", ntohs(response->length), response->checksum, response->groupid, response->rid);
             #ifdef DEBUG
                 for (i = 0; i < 1019; i++) {
-                    printf("%02x", response->msg[i]);   
+                    printf("%02x ", (uint8_t)response->msg[i]);   
                 }
                 printf("\n");
             #endif
